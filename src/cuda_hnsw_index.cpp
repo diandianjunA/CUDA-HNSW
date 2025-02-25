@@ -1,5 +1,6 @@
 #include "cuda_hnsw_index.h"
 #include <vector>
+#include "cuda/search_kernel.cuh"
 
 CUDAHNSWIndex::CUDAHNSWIndex(int dim, int num_data, int M, int ef_construction) : dim(dim) { // 将MetricType参数修改为第三个参数
     bool normalize = false;
@@ -25,4 +26,14 @@ std::pair<std::vector<long>, std::vector<float>> CUDAHNSWIndex::search_vectors(c
     }
 
     return {indices, distances};
+}
+
+std::pair<std::vector<long>, std::vector<float>> CUDAHNSWIndex::search_vectors_gpu(const std::vector<float>& query, int k, int ef_search = 50) {
+    std::vector<int> graph_vec;
+    std::vector<int> deg;
+    std::vector<int> indices(k);
+    std::vector<float> distances(k);
+    int fount_cnt = 0;
+    cuda_search(dim, ef_search, index->enterpoint_node_, index->cur_element_count, query.data(), index->data_level0_memory_, k, index->maxM0_, graph_vec, deg, indices.data(), distances.data(), &fount_cnt);
+
 }

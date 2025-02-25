@@ -23,5 +23,8 @@ file(GLOB CURRENT_SOURCES  *.cpp *.cu)
 source_group("Include" FILES ${CURRENT_HEADERS}) 
 source_group("Source" FILES ${CURRENT_SOURCES}) 
 
+include_directories("/usr/local/cuda-12.5/targets/x86_64-linux/include")
+include_directories("../hnswlib")
+
 #cuda_add_library(gpu SHARED ${CURRENT_HEADERS} ${CURRENT_SOURCES})
 cuda_add_library(gpu STATIC ${CURRENT_HEADERS} ${CURRENT_SOURCES})

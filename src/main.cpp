@@ -2,12 +2,8 @@
 #include <iostream>
 #include "cuda_hnsw_index.h"
 
-extern "C"
-void useCUDA();
-
 int main() {
     std::cout<<"Hello C++"<<std::endl;
-    useCUDA();
 
     CUDAHNSWIndex* index = new CUDAHNSWIndex(128, 1000000, 16, 200);
 
