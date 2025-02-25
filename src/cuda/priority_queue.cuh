@@ -1,10 +1,20 @@
 #include "dist_calculate.cuh"
 
+extern __global__ int dims;
+extern __global__ char* data;
+extern __global__ size_t size_data_per_element;
+extern __global__ size_t offsetData;
+extern __global__ int ef_search;
+
 struct Node {
   float distance;
   int nodeid;
   bool checked;
 };
+
+__inline__ __device__ float *getDataByInternalId(unsigned int internal_id) const {
+  return (float *)(data + internal_id * size_data_per_element + offsetData);
+}
 
 __inline__ __device__
 void PqPop(Node* pq, int* size) {
@@ -99,11 +109,9 @@ bool CheckAlreadyExists(const Node* pq, const int size, const int nodeid) {
 }
 
 __inline__ __device__
-void PushNodeToSearchPq(Node* pq, int* size, const int max_size,
-    const float* data, const int dims,
-    const float* src_vec, const int dstid) {
+void PushNodeToSearchPq(Node* pq, int* size, const float* src_vec, const int dstid) {
   if (CheckAlreadyExists(pq, *size, dstid)) return;
-  const float* dst_vec = data + dims * dstid;
+  const float* dst_vec = getDataByInternalId(dstid);
   float dist = GetDistanceByVec(src_vec, dst_vec, dims);
   __syncthreads();
   if (*size < max_size) {

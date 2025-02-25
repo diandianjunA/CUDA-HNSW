@@ -34,6 +34,6 @@ std::pair<std::vector<long>, std::vector<float>> CUDAHNSWIndex::search_vectors_g
     std::vector<int> indices(k);
     std::vector<float> distances(k);
     int fount_cnt = 0;
-    cuda_search(dim, ef_search, index->enterpoint_node_, index->cur_element_count, query.data(), index->data_level0_memory_, k, index->maxM0_, graph_vec, deg, indices.data(), distances.data(), &fount_cnt);
+    cuda_search(dim, ef_search, index->enterpoint_node_, index->cur_element_count, query.data(), index->data_size_, index->data_level0_memory_, index->size_data_per_element_, index->offsetData_, k, index->maxM0_, graph_vec, deg, indices.data(), distances.data(), &fount_cnt);
 
 }

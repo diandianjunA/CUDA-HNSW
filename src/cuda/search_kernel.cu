@@ -15,6 +15,16 @@ printf("code : %d , reason : %s \n", res,cudaGetErrorString(res));exit(-1);}}
 #define visited_table_size_ 100
 #define visited_list_size_ 50
 
+__global__ int dims;
+__global__ char* data;
+__global__ size_t size_data_per_element;
+__global__ size_t offsetData;
+__global__ int max_m;
+__global__ int k;
+__global__ int ef_search;
+__global__ int num_data;
+__global__ size_t data_size;
+
 __inline__ __device__
 bool CheckVisited(int* visited_table, int* visited_list, int& visited_cnt, int target, const int visited_table_size, const int visited_list_size) {
   __syncthreads();
@@ -120,10 +130,9 @@ int GetCand(const Node* pq, const int size) {
 }
 
 __global__ void search_kernel(
-    int dims, const float *query_data, const float* data, int entry_node,
-    Node* device_pq, int* visited_table, int* visited_list, 
-    int ef_search, int* global_candidate_nodes, float* global_candidate_distances, 
-    int * found_cnt, int max_m, int topk, int* nns, float* distances, const int* graph, const int* deg) {
+    const float *query_data, int entry_node,
+    Node* device_pq, int* visited_table, int* visited_list, int* global_candidate_nodes, float* global_candidate_distances, 
+    int * found_cnt, int* nns, float* distances, const int* graph, const int* deg) {
 
     static __shared__ int size;
 
@@ -136,7 +145,7 @@ __global__ void search_kernel(
     int* _visited_list = visited_list + visited_list_size_ * blockIdx.x;
 
     const float* src_vec = query_data;
-    PushNodeToSearchPq(ef_search_pq, &size, ef_search, data, dims, query_data, entry_node);
+    PushNodeToSearchPq(ef_search_pq, &size, query_data, entry_node);
 
     if (CheckVisited(_visited_table, _visited_list, visited_cnt, entry_node, visited_table_size_, visited_list_size_)) {
         return;
@@ -157,11 +166,10 @@ __global__ void search_kernel(
           continue;
         __syncthreads();
 
-        const float* dst_vec = data + dims * dstid;
+        const float* dst_vec = getDataByInternalId(dstid);
         float dist = GetDistanceByVec(src_vec, dst_vec, dims);
 
-        PushNodeToSearchPq(ef_search_pq, &size, ef_search,
-            data, dims, src_vec, dstid);
+        PushNodeToSearchPq(ef_search_pq, &size, src_vec, dstid);
       }
       __syncthreads();
       idx = GetCand(ef_search_pq, size);
@@ -189,41 +197,44 @@ __global__ void search_kernel(
 }
 
 
-void cuda_search(int dims, int ef_search, int entry_node, int num_data_, const float *query_data, const float* data, size_t k, int max_m0_, const std::vector<int>& graph_vec, const std::vector<int>& deg, int* nns, float* distances, int* found_cnt) {
+void cuda_search(int entry_node, const float *query_data, int* nns, float* distances, int* found_cnt) {
     int block_cnt_ = 16;
     thrust::device_vector<Node> device_pq(ef_search * block_cnt_);
     thrust::device_vector<int> global_candidate_nodes(ef_search * block_cnt_);
     thrust::device_vector<float> global_candidate_distances(ef_search * block_cnt_);
     thrust::device_vector<int> device_visited_table(visited_table_size_ * block_cnt_, -1);
     thrust::device_vector<int> device_visited_list(visited_list_size_ * block_cnt_);
-    thrust::device_vector<int> device_graph(max_m0_ * num_data_);
-    thrust::device_vector<int> device_deg(num_data_);
     thrust::device_vector<int> device_found_cnt(1);
     thrust::device_vector<int> device_nns(k);
     thrust::device_vector<float> device_distances(k);
-    thrust::device_vector<float> device_data(num_data_);
-
-    thrust::copy(graph_vec.begin(), graph_vec.end(), device_graph.begin());
-    thrust::copy(deg.begin(), deg.end(), device_deg.begin());
+    thrust::device_vector<float> device_query_data(data_size_);
 
     search_kernel<<<1, 5>>>(
-      dims, query_data, data, entry_node,
+      query_data, entry_node,
       thrust::raw_pointer_cast(device_pq.data()),
       thrust::raw_pointer_cast(device_visited_table.data()),
       thrust::raw_pointer_cast(device_visited_list.data()),
-      ef_search,
       thrust::raw_pointer_cast(global_candidate_nodes.data()),
       thrust::raw_pointer_cast(global_candidate_distances.data()),
       thrust::raw_pointer_cast(device_found_cnt.data()),
-      max_m0_, k, 
       thrust::raw_pointer_cast(device_nns.data()),
-      thrust::raw_pointer_cast(device_distances.data()),
-      thrust::raw_pointer_cast(device_graph.data()),
-      thrust::raw_pointer_cast(device_deg.data())
+      thrust::raw_pointer_cast(device_distances.data())
     );
     CHECK(cudaDeviceSynchronize());
     thrust::copy(device_nns.begin(), device_nns.end(), nns);
     thrust::copy(device_distances.begin(), device_distances.end(), distances);
     thrust::copy(device_found_cnt.begin(), device_found_cnt.end(), found_cnt);
     CHECK(cudaDeviceSynchronize());
+}
+
+void cuda_init(int dims_, char* data_, size_t size_data_per_element_, size_t offsetData_, int max_m_, int k_, int ef_search_, int num_data_, size_t data_size_) {
+    cudaMemcpy(&dims, &dims_, sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(data, data_, sizeof(char) * (num_data_ * size_data_per_element_), cudaMemcpyHostToDevice);
+    cudaMemcpy(&size_data_per_element, &size_data_per_element_, sizeof(size_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(&offsetData, &offsetData_, sizeof(size_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(&max_m, &max_m_, sizeof(size_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(&k, &k_, sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(&ef_search, &ef_search_, sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(&num_data, &num_data_, sizeof(int), cudaMemcpyHostToDevice);
+    cudaMemcpy(&data_size, &data_size_, sizeof(size_t), cudaMemcpyHostToDevice);
 }
