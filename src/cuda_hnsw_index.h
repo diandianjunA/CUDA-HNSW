@@ -8,6 +8,10 @@ public:
     // 构造函数
     CUDAHNSWIndex(int dim, int num_data, int M = 16, int ef_construction = 200); // 将MetricType参数修改为第三个参数
 
+    void init_gpu();
+
+    void check();
+
     // 插入向量
     void insert_vectors(const std::vector<float>& data, uint64_t label);
 

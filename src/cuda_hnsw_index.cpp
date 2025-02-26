@@ -28,12 +28,41 @@ std::pair<std::vector<long>, std::vector<float>> CUDAHNSWIndex::search_vectors(c
     return {indices, distances};
 }
 
-std::pair<std::vector<long>, std::vector<float>> CUDAHNSWIndex::search_vectors_gpu(const std::vector<float>& query, int k, int ef_search = 50) {
-    std::vector<int> graph_vec;
-    std::vector<int> deg;
-    std::vector<int> indices(k);
+void CUDAHNSWIndex::check() {
+    for (int i = 0; i < index->cur_element_count; i++) {
+        char* data_ptr = index->getDataByInternalId(i);
+        float* data = (float*) data_ptr;
+        std::cout << "data[" << i << "] = [";
+        for (int j = 0; j < dim; j++) {
+            std::cout << data[j] << ", ";
+        }
+        std::cout << "]" << std::endl;
+    }
+
+    for (int i = 0; i < index->cur_element_count; i++) {
+        unsigned int *linklist = index->get_linklist0(i);
+        int deg = index->getListCount(linklist);
+        printf("linklist[%d] = [", i);
+        for (int j = 1; j <= deg; j++) {
+          printf("%d, ", *(linklist + j));
+        }
+        printf("]\n");
+    }
+}
+
+void CUDAHNSWIndex::init_gpu() {
+    cuda_init(dim, index->data_level0_memory_, index->size_data_per_element_, index->offsetData_, index->maxM0_, index->ef_, index->cur_element_count, index->data_size_, index->offsetLevel0_);
+}
+
+std::pair<std::vector<long>, std::vector<float>> CUDAHNSWIndex::search_vectors_gpu(const std::vector<float>& query, int k, int ef_search) {
+    std::vector<int> inner_index(k);
+    std::vector<long> indices(k);
     std::vector<float> distances(k);
     int fount_cnt = 0;
-    cuda_search(dim, ef_search, index->enterpoint_node_, index->cur_element_count, query.data(), index->data_size_, index->data_level0_memory_, index->size_data_per_element_, index->offsetData_, k, index->maxM0_, graph_vec, deg, indices.data(), distances.data(), &fount_cnt);
-
+    cuda_search(index->enterpoint_node_, query.data(), k, inner_index.data(), distances.data(), &fount_cnt);
+    for (int i = 0; i < fount_cnt; i++) {
+        indices[i] = index->getExternalLabel(inner_index[i]);
+    }
+    std::cout << "fount_cnt: " << fount_cnt << std::endl;
+    return {indices, distances};
 }

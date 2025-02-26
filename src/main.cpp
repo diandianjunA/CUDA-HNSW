@@ -23,6 +23,8 @@ int main() {
         index->insert_vectors(vectors[i], i);  // 向量和对应的ID
     }
 
+    // index->check();
+
     // 测试查询
     std::vector<float> query(dim, 0.5f);  // 查询向量
     std::pair<std::vector<long>, std::vector<float>> result = index->search_vectors(query, 5, 20);  // 找5个最近邻
@@ -30,6 +32,16 @@ int main() {
     // 输出搜索结果
     for (int i = 0; i < result.first.size(); i++) {
         std::cout << "ID: " << result.first[i] << ", Distance: " << result.second[i] << std::endl;
+    }
+
+    std::cout << "------------------" << std::endl;
+
+    index->init_gpu();  // 初始化GPU
+    std::pair<std::vector<long>, std::vector<float>> gpu_result = index->search_vectors_gpu(query, 5, 20);  // 使用GPU搜索
+
+    // 输出GPU搜索结果
+    for (int i = 0; i < gpu_result.first.size(); i++) {
+        std::cout << "ID: " << gpu_result.first[i] << ", Distance: " << gpu_result.second[i] << std::endl;
     }
 
     return 0;

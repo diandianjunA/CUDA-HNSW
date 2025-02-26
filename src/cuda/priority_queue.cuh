@@ -1,10 +1,14 @@
 #include "dist_calculate.cuh"
 
-extern __global__ int dims;
-extern __global__ char* data;
-extern __global__ size_t size_data_per_element;
-extern __global__ size_t offsetData;
-extern __global__ int ef_search;
+__device__ int dims;
+__device__ char* data;
+__device__ size_t size_data_per_element;
+__device__ size_t offsetData;
+__device__ int max_m;
+__device__ int ef_search;
+__device__ int num_data;
+__device__ size_t data_size;
+__device__ size_t offsetLevel0;
 
 struct Node {
   float distance;
@@ -12,7 +16,7 @@ struct Node {
   bool checked;
 };
 
-__inline__ __device__ float *getDataByInternalId(unsigned int internal_id) const {
+__inline__ __device__ float *getDataByInternalId(unsigned int internal_id) {
   return (float *)(data + internal_id * size_data_per_element + offsetData);
 }
 
@@ -110,13 +114,16 @@ bool CheckAlreadyExists(const Node* pq, const int size, const int nodeid) {
 
 __inline__ __device__
 void PushNodeToSearchPq(Node* pq, int* size, const float* src_vec, const int dstid) {
-  if (CheckAlreadyExists(pq, *size, dstid)) return;
+  if (CheckAlreadyExists(pq, *size, dstid)) {
+    return;
+  }
   const float* dst_vec = getDataByInternalId(dstid);
   float dist = GetDistanceByVec(src_vec, dst_vec, dims);
   __syncthreads();
-  if (*size < max_size) {
+  if (*size < ef_search) {
     PqPush(pq, size, dist, dstid, false);
   } else if (gt(pq[0].distance, dist)) {
+    // printf("thread_id: %d, PushNodeToSearchPq: %f %f, size: %d\n", threadIdx.x, pq[0].distance, dist, *size);
     PqPop(pq, size);
     PqPush(pq, size, dist, dstid, false);
   }
