@@ -59,10 +59,32 @@ std::pair<std::vector<long>, std::vector<float>> CUDAHNSWIndex::search_vectors_g
     std::vector<long> indices(k);
     std::vector<float> distances(k);
     int fount_cnt = 0;
-    cuda_search(index->enterpoint_node_, query.data(), k, inner_index.data(), distances.data(), &fount_cnt);
+    cuda_search(index->enterpoint_node_, query.data(), 1, ef_search, k, inner_index.data(), distances.data(), &fount_cnt);
     for (int i = 0; i < fount_cnt; i++) {
         indices[i] = index->getExternalLabel(inner_index[i]);
     }
-    std::cout << "fount_cnt: " << fount_cnt << std::endl;
     return {indices, distances};
+}
+
+// GPU批量查询
+std::vector<std::pair<std::vector<long>, std::vector<float>>> CUDAHNSWIndex::search_vectors_batch_gpu(const std::vector<std::vector<float>>& query, int k, int ef_search) {
+    std::vector<std::pair<std::vector<long>, std::vector<float>>> results;
+    int num_query = query.size();
+    std::vector<int> inner_index(k * num_query);
+    std::vector<float> distances(k * num_query);
+    std::vector<int> found_cnt(num_query);
+
+    cuda_search(index->enterpoint_node_, query.data(), num_query, ef_search, k, inner_index.data(), distances.data(), found_cnt.data());
+
+    for (int i = 0; i < num_query; i++) {
+        std::vector<long> indices(k);
+        std::vector<float> dists(k);
+        for (int j = 0; j < found_cnt[i]; j++) {
+            indices[j] = index->getExternalLabel(inner_index[i * k + j]);
+            dists[j] = distances[i * k + j];
+        }
+        results.push_back({indices, dists});
+    }
+
+    return results;
 }

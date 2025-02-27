@@ -132,7 +132,7 @@ __inline__ __device__ int GetCand(const Node *pq, const int size) {
   return shared[0];
 }
 
-__global__ void search_kernel(const float *query_data, int k, int entry_node,
+__global__ void search_kernel(const float *query_data, int num_query, int k, int entry_node,
                               Node *device_pq, int *visited_table,
                               int *visited_list, int *global_candidate_nodes,
                               float *global_candidate_distances, int *found_cnt,
@@ -151,97 +151,98 @@ __global__ void search_kernel(const float *query_data, int k, int entry_node,
   int *_visited_table = visited_table + visited_table_size_ * blockIdx.x;
   int *_visited_list = visited_list + visited_list_size_ * blockIdx.x;
 
-  if (threadIdx.x == 0) {
-    size = 0;
-    visited_cnt = 0;
-  }
-  __syncthreads();
-
-  const float *src_vec = query_data;
-  PushNodeToSearchPq(ef_search_pq, &size, query_data, entry_node);
-
-  if (CheckVisited(_visited_table, _visited_list, visited_cnt, entry_node,
-                   visited_table_size_, visited_list_size_)) {
-    return;
-  }
-  __syncthreads();
-
-  int idx = GetCand(ef_search_pq, size);
-  while (idx >= 0) {
+  for (int i = blockIdx.x; i < num_qnodes; i += gridDim.x) {
+    if (threadIdx.x == 0) {
+      size = 0;
+      visited_cnt = 0;
+    }
     __syncthreads();
-    if (threadIdx.x == 0)
-      ef_search_pq[idx].checked = true;
-    int entry = ef_search_pq[idx].nodeid;
+  
+    const float *src_vec = query_data + i * dims;
+    PushNodeToSearchPq(ef_search_pq, &size, query_data, entry_node);
+  
+    if (CheckVisited(_visited_table, _visited_list, visited_cnt, entry_node,
+                     visited_table_size_, visited_list_size_)) {
+      continue;
+    }
     __syncthreads();
-
-    unsigned int *entry_neighbor_ptr = get_linklist0(entry);
-    int deg = getListCount(entry_neighbor_ptr);
-
-    for (int j = 1; j <= deg; ++j) {
-      int dstid = *(entry_neighbor_ptr + j);
-
-      if (CheckVisited(_visited_table, _visited_list, visited_cnt, dstid,
-                       visited_table_size_, visited_list_size_)) {
-        continue;
+  
+    int idx = GetCand(ef_search_pq, size);
+    while (idx >= 0) {
+      __syncthreads();
+      if (threadIdx.x == 0)
+        ef_search_pq[idx].checked = true;
+      int entry = ef_search_pq[idx].nodeid;
+      __syncthreads();
+  
+      unsigned int *entry_neighbor_ptr = get_linklist0(entry);
+      int deg = getListCount(entry_neighbor_ptr);
+  
+      for (int j = 1; j <= deg; ++j) {
+        int dstid = *(entry_neighbor_ptr + j);
+  
+        if (CheckVisited(_visited_table, _visited_list, visited_cnt, dstid,
+                         visited_table_size_, visited_list_size_)) {
+          continue;
+        }
+        __syncthreads();
+  
+        PushNodeToSearchPq(ef_search_pq, &size, src_vec, dstid);
       }
       __syncthreads();
-
-      PushNodeToSearchPq(ef_search_pq, &size, src_vec, dstid);
+      idx = GetCand(ef_search_pq, size);
     }
     __syncthreads();
-    idx = GetCand(ef_search_pq, size);
-  }
-  __syncthreads();
-
-  for (int j = threadIdx.x; j < visited_cnt; j += blockDim.x) {
-    _visited_table[_visited_list[j]] = -1;
-  }
-  __syncthreads();
-  // get sorted neighbors
-  if (threadIdx.x == 0) {
-    int size2 = size;
-    while (size > 0) {
-      candidate_nodes[size - 1] = ef_search_pq[0].nodeid;
-      candidate_distances[size - 1] = ef_search_pq[0].distance;
-      PqPop(ef_search_pq, &size);
+  
+    for (int j = threadIdx.x; j < visited_cnt; j += blockDim.x) {
+      _visited_table[_visited_list[j]] = -1;
     }
-    *found_cnt = size2 < k ? size2 : k;
-    for (int j = 0; j < *found_cnt; ++j) {
-      nns[j] = candidate_nodes[j];
-      distances[j] = out_scalar(candidate_distances[j]);
+    __syncthreads();
+    // get sorted neighbors
+    if (threadIdx.x == 0) {
+      int size2 = size;
+      while (size > 0) {
+        candidate_nodes[size - 1] = ef_search_pq[0].nodeid;
+        candidate_distances[size - 1] = ef_search_pq[0].distance;
+        PqPop(ef_search_pq, &size);
+      }
+      *found_cnt = size2 < k ? size2 : k;
+      for (int j = 0; j < found_cnt[i]; ++j) {
+        nns[j + i * topk] = cand_nodes[j];
+        distances[j + i * topk] = out_scalar(cand_distances[j]);
+      }
+    }
+    __syncthreads();
+  }
+  
+  __global__ void kernel_check() {
+    printf("Hello from kernel\n");
+  
+    for (int i = 0; i < num_data; i++) {
+      float *data = getDataByInternalId(i);
+      printf("data[%d] = [", i);
+      for (int j = 0; j < dims; j++) {
+        printf("%f, ", data[j]);
+      }
+      printf("]\n");
+    }
+  
+    for (int i = 0; i < num_data; i++) {
+      unsigned int *linklist = get_linklist0(i);
+      int deg = getListCount(linklist);
+      printf("linklist[%d] = [", i);
+      for (int j = 1; j <= deg; j++) {
+        printf("%d, ", *(linklist + j));
+      }
+      printf("]\n");
     }
   }
-  __syncthreads();
 }
 
-__global__ void kernel_check() {
-  printf("Hello from kernel\n");
-
-  for (int i = 0; i < num_data; i++) {
-    float *data = getDataByInternalId(i);
-    printf("data[%d] = [", i);
-    for (int j = 0; j < dims; j++) {
-      printf("%f, ", data[j]);
-    }
-    printf("]\n");
-  }
-
-  for (int i = 0; i < num_data; i++) {
-    unsigned int *linklist = get_linklist0(i);
-    int deg = getListCount(linklist);
-    printf("linklist[%d] = [", i);
-    for (int j = 1; j <= deg; j++) {
-      printf("%d, ", *(linklist + j));
-    }
-    printf("]\n");
-  }
-}
-
-void cuda_search(int entry_node, const float *query_data, int k, int *nns,
-                 float *distances, int *found_cnt) {
-  int block_cnt_ = 1;
-  int ef_search_ = 100;
-  cudaMemcpyFromSymbol(&ef_search_, ef_search, sizeof(int));
+void cuda_search(int entry_node, const float *query_data, int num_query, int ef_search_,
+                       int k, int *nns, float *distances, int *found_cnt) {
+  int block_cnt_ = num_query;
+  cudaMemcpyToSymbol(ef_search, &ef_search_, sizeof(int));
   thrust::device_vector<Node> device_pq(ef_search_ * block_cnt_);
   thrust::device_vector<int> global_candidate_nodes(ef_search_ * block_cnt_);
   thrust::device_vector<float> global_candidate_distances(ef_search_ *
@@ -250,11 +251,11 @@ void cuda_search(int entry_node, const float *query_data, int k, int *nns,
       visited_table_size_ * block_cnt_, -1);
   thrust::device_vector<int> device_visited_list(visited_list_size_ *
                                                  block_cnt_);
-  thrust::device_vector<int> device_found_cnt(1);
-  thrust::device_vector<int> device_nns(k);
-  thrust::device_vector<float> device_distances(k);
+  thrust::device_vector<int> device_found_cnt(block_cnt_);
+  thrust::device_vector<int> device_nns(k * block_cnt_);
+  thrust::device_vector<float> device_distances(k * block_cnt_);
 
-  search_kernel<<<1, 32>>>(
+  search_kernel<<<block_cnt_, 32>>>(
       query_data, k, entry_node, thrust::raw_pointer_cast(device_pq.data()),
       thrust::raw_pointer_cast(device_visited_table.data()),
       thrust::raw_pointer_cast(device_visited_list.data()),
@@ -290,6 +291,6 @@ void cuda_init(int dims_, char *data_, size_t size_data_per_element_,
   cudaMemcpyToSymbol(data, &deviceData, sizeof(int *));
   CHECK(cudaDeviceSynchronize());
 
-//   kernel_check<<<1, 1>>>();
-//   CHECK(cudaDeviceSynchronize());
+  //   kernel_check<<<1, 1>>>();
+  //   CHECK(cudaDeviceSynchronize());
 }

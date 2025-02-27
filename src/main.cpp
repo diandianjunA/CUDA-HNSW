@@ -1,13 +1,12 @@
 #include <stdio.h>
 #include <iostream>
 #include "cuda_hnsw_index.h"
+#include <chrono>
 
-int main() {
-    std::cout<<"Hello C++"<<std::endl;
+void test1() {
+    CUDAHNSWIndex* index = new CUDAHNSWIndex(128, 100000, 16, 200);
 
-    CUDAHNSWIndex* index = new CUDAHNSWIndex(128, 1000000, 16, 200);
-
-    int num_vectors = 100;
+    int num_vectors = 10000;
     int dim = 128;
     std::vector<std::vector<float>> vectors(num_vectors, std::vector<float>(dim));
 
@@ -18,31 +17,54 @@ int main() {
         }
     }
 
+    std::cout << "generate vectors done" << std::endl;
+
     // 批量插入向量
     for (int i = 0; i < num_vectors; ++i) {
         index->insert_vectors(vectors[i], i);  // 向量和对应的ID
     }
 
+    std::cout << "insert vectors done" << std::endl;
     // index->check();
 
     // 测试查询
-    std::vector<float> query(dim, 0.5f);  // 查询向量
-    std::pair<std::vector<long>, std::vector<float>> result = index->search_vectors(query, 5, 20);  // 找5个最近邻
 
-    // 输出搜索结果
-    for (int i = 0; i < result.first.size(); i++) {
-        std::cout << "ID: " << result.first[i] << ", Distance: " << result.second[i] << std::endl;
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < 1000; ++i) {
+        std::vector<float> query(dim);
+        for (int j = 0; j < dim; ++j) {
+            query[j] = static_cast<float>(rand()) / RAND_MAX;
+        }
+        std::pair<std::vector<long>, std::vector<float>> result = index->search_vectors(query, 5, 20);  // 找5个最近邻
     }
+    auto end = std::chrono::high_resolution_clock::now();
+    // 输出搜索时间，单位为纳秒
+    std::cout << "search time: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end - start).count() << "ns" << std::endl;
 
     std::cout << "------------------" << std::endl;
 
     index->init_gpu();  // 初始化GPU
-    std::pair<std::vector<long>, std::vector<float>> gpu_result = index->search_vectors_gpu(query, 5, 20);  // 使用GPU搜索
 
-    // 输出GPU搜索结果
-    for (int i = 0; i < gpu_result.first.size(); i++) {
-        std::cout << "ID: " << gpu_result.first[i] << ", Distance: " << gpu_result.second[i] << std::endl;
+    auto start_gpu = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < 1000; ++i) {
+        std::vector<float> query(dim);
+        for (int j = 0; j < dim; ++j) {
+            query[j] = static_cast<float>(rand()) / RAND_MAX;
+        }
+        std::pair<std::vector<long>, std::vector<float>> result = index->search_vectors_gpu(query, 5, 20);  // 找5个最近邻
     }
+    auto end_gpu = std::chrono::high_resolution_clock::now();
+    std::cout << "search time: " << std::chrono::duration_cast<std::chrono::nanoseconds>(end_gpu - start_gpu).count() << "ns" << std::endl;
+}
+
+void test2() {
+    
+}
+
+int main() {
+    std::cout<<"Hello C++"<<std::endl;
+
+    
 
     return 0;
 }
