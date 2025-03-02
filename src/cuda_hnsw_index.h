@@ -13,14 +13,14 @@ public:
     void check();
 
     // 插入向量
-    void insert_vectors(const std::vector<float>& data, uint64_t label);
+    void insert_vectors(const float* data, uint64_t label);
 
     // 查询向量
     std::pair<std::vector<long>, std::vector<float>> search_vectors(const std::vector<float>& query, int k, int ef_search = 50);
 
-    std::pair<std::vector<long>, std::vector<float>> search_vectors_gpu(const std::vector<float>& query, int k, int ef_search = 50);
+    std::pair<std::vector<long>, std::vector<float>> search_vectors_gpu(const std::vector<float>& query, int k, int ef_search = 50, bool use_hierarchy = true);
 
-    std::vector<std::pair<std::vector<long>, std::vector<float>>> search_vectors_batch_gpu(const std::vector<std::vector<float>>& query, int k, int ef_search = 50);
+    std::vector<std::pair<std::vector<long>, std::vector<float>>> search_vectors_batch_gpu(const std::vector<float>& query, int k, int ef_search = 50, bool use_hierarchy = true);
 
 private:
     int dim;

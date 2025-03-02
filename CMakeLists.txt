@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.2)
 
 
 add_subdirectory(src/cuda)
-set (EXTRA_LIBS ${EXTRA_LIBS} gpu)
+set (EXTRA_LIBS ${EXTRA_LIBS} gpu faiss)
 
 file(GLOB CUDA_HNSW_SOURCES src/cuda_hnsw_index.h src/cuda_hnsw_index.cpp src/hnswlib/*.h)
 

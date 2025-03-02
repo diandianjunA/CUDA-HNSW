@@ -8,8 +8,8 @@ CUDAHNSWIndex::CUDAHNSWIndex(int dim, int num_data, int M, int ef_construction) 
     index = new hnswlib::HierarchicalNSW<float>(space, num_data, M, ef_construction);
 }
 
-void CUDAHNSWIndex::insert_vectors(const std::vector<float>& data, uint64_t label) {
-    index->addPoint(data.data(), label);
+void CUDAHNSWIndex::insert_vectors(const float* data, uint64_t label) {
+    index->addPoint(data, label);
 }
 
 std::pair<std::vector<long>, std::vector<float>> CUDAHNSWIndex::search_vectors(const std::vector<float>& query, int k, int ef_search) { // 修改返回类型
@@ -51,15 +51,33 @@ void CUDAHNSWIndex::check() {
 }
 
 void CUDAHNSWIndex::init_gpu() {
-    cuda_init(dim, index->data_level0_memory_, index->size_data_per_element_, index->offsetData_, index->maxM0_, index->ef_, index->cur_element_count, index->data_size_, index->offsetLevel0_);
+    // for (int i = 0; i < index->cur_element_count; i++) {
+    //     std::cout << "element_levels_[" << i << "] = " << index->element_levels_[i] << std::endl;
+    // }
+    // for (int i = 0; i < index->cur_element_count; i++) {
+    //     for (int l = 0; l < index->element_levels_[i]; l++) {
+    //       unsigned int *linklist = index->get_linklist_at_level(i, l);
+    //       int deg = index->getListCount(linklist);
+    //       printf("linklist[%d][%d] = [", i, l);
+    //       for (int j = 1; j <= deg; j++) {
+    //         printf("%d, ", *(linklist + j));
+    //       }
+    //       printf("]\n");
+    //     }
+    // }
+    cuda_init(dim, index->data_level0_memory_, index->size_data_per_element_, index->offsetData_, index->maxM0_, index->ef_, index->cur_element_count, index->data_size_, index->offsetLevel0_, index->linkLists_, index->element_levels_.data(), index->size_links_per_element_, index->maxlevel_);
 }
 
-std::pair<std::vector<long>, std::vector<float>> CUDAHNSWIndex::search_vectors_gpu(const std::vector<float>& query, int k, int ef_search) {
+std::pair<std::vector<long>, std::vector<float>> CUDAHNSWIndex::search_vectors_gpu(const std::vector<float>& query, int k, int ef_search, bool use_hierarchy) {
     std::vector<int> inner_index(k);
     std::vector<long> indices(k);
     std::vector<float> distances(k);
     int fount_cnt = 0;
-    cuda_search(index->enterpoint_node_, query.data(), 1, ef_search, k, inner_index.data(), distances.data(), &fount_cnt);
+    if (use_hierarchy) {
+        cuda_search_hierarchical(index->enterpoint_node_, query.data(), 1, ef_search, k, inner_index.data(), distances.data(), &fount_cnt);
+    } else {
+        cuda_search(index->enterpoint_node_, query.data(), 1, ef_search, k, inner_index.data(), distances.data(), &fount_cnt);
+    }
     for (int i = 0; i < fount_cnt; i++) {
         indices[i] = index->getExternalLabel(inner_index[i]);
     }
@@ -67,15 +85,19 @@ std::pair<std::vector<long>, std::vector<float>> CUDAHNSWIndex::search_vectors_g
 }
 
 // GPU批量查询
-std::vector<std::pair<std::vector<long>, std::vector<float>>> CUDAHNSWIndex::search_vectors_batch_gpu(const std::vector<std::vector<float>>& query, int k, int ef_search) {
+std::vector<std::pair<std::vector<long>, std::vector<float>>> CUDAHNSWIndex::search_vectors_batch_gpu(const std::vector<float>& query, int k, int ef_search, bool use_hierarchy) {
     std::vector<std::pair<std::vector<long>, std::vector<float>>> results;
-    int num_query = query.size();
+    int num_query = query.size() / dim;
     std::vector<int> inner_index(k * num_query);
     std::vector<float> distances(k * num_query);
     std::vector<int> found_cnt(num_query);
 
-    cuda_search(index->enterpoint_node_, query.data(), num_query, ef_search, k, inner_index.data(), distances.data(), found_cnt.data());
-
+    if (use_hierarchy) {
+        cuda_search_hierarchical(index->enterpoint_node_, query.data(), num_query, ef_search, k, inner_index.data(), distances.data(), found_cnt.data());
+    } else {
+        cuda_search(index->enterpoint_node_, query.data(), num_query, ef_search, k, inner_index.data(), distances.data(), found_cnt.data());
+    }
+    
     for (int i = 0; i < num_query; i++) {
         std::vector<long> indices(k);
         std::vector<float> dists(k);
