@@ -221,6 +221,8 @@ void get_entry_points(std::vector<int> &entries, const float *query_data,
   // process input data for kernel
   int num_data_ = 0;
   cudaMemcpyFromSymbol(&num_data_, num_data, sizeof(int));
+  int dims_;
+  cudaMemcpyFromSymbol(&dims_, dims, sizeof(int));
 
   // copy to gpu mem
   thrust::device_vector<int> dev_entries(entries.size());
@@ -229,7 +231,7 @@ void get_entry_points(std::vector<int> &entries, const float *query_data,
   for (int l = max_level; l > level; l--) {
     thrust::copy(entries.begin(), entries.end(), dev_entries.begin());
 
-    get_entry_points_kernel<<<block_cnt, 32>>>(
+    get_entry_points_kernel<<<block_cnt, dims_>>>(
         query_data, thrust::raw_pointer_cast(dev_visited_table.data()),
         thrust::raw_pointer_cast(dev_entries.data()), l, entries.size());
     CHECK(cudaDeviceSynchronize());
@@ -263,7 +265,7 @@ void cuda_search(int entry_node, const float *query_data, int num_query,
                device_qdata_.begin());
   thrust::device_vector<int> dev_entries(num_query, entry_node);
 
-  search_kernel<<<block_cnt_, 512>>>(
+  search_kernel<<<block_cnt_, dims_>>>(
       thrust::raw_pointer_cast(device_qdata_.data()), num_query, k,
       thrust::raw_pointer_cast(dev_entries.data()),
       thrust::raw_pointer_cast(device_pq.data()),
@@ -303,11 +305,11 @@ void cuda_search_hierarchical(int entry_node, const float *query_data,
   thrust::copy(query_data, query_data + num_query * dims_,
                device_qdata_.begin());
   std::vector<int> entries(num_query, entry_node);
-  get_entry_points(entries, query_data, 0, block_cnt_);
+  get_entry_points(entries, thrust::raw_pointer_cast(device_qdata_.data()), 0, block_cnt_);
   thrust::device_vector<int> dev_entries(num_query, entry_node);
   thrust::copy(entries.begin(), entries.end(), dev_entries.begin());
 
-  search_kernel<<<block_cnt_, 32>>>(
+  search_kernel<<<block_cnt_, dims_>>>(
       thrust::raw_pointer_cast(device_qdata_.data()), num_query, k,
       thrust::raw_pointer_cast(dev_entries.data()),
       thrust::raw_pointer_cast(device_pq.data()),
@@ -373,8 +375,8 @@ void cuda_init(int dims_, char *data_, size_t size_data_per_element_,
   cudaMemcpyToSymbol(element_levels, &deviceElementLevels, sizeof(int *));
   CHECK(cudaDeviceSynchronize());
 
-  //   kernel_check<<<1, 1>>>();
-  //   CHECK(cudaDeviceSynchronize());
+  // kernel_check<<<1, 1>>>();
+  // CHECK(cudaDeviceSynchronize());
   // kernel_check2<<<1, 1>>>();
   // CHECK(cudaDeviceSynchronize());
 }

@@ -14,6 +14,7 @@ public:
 
     // 插入向量
     void insert_vectors(const float* data, uint64_t label);
+    void insert_vectors_batch(const std::vector<float>& data, const std::vector<uint64_t>& labels);
 
     // 查询向量
     std::pair<std::vector<long>, std::vector<float>> search_vectors(const std::vector<float>& query, int k, int ef_search = 50);

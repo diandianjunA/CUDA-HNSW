@@ -1,6 +1,7 @@
 #include "cuda_hnsw_index.h"
 #include <vector>
 #include "cuda/search_kernel.cuh"
+#include <thread>
 
 CUDAHNSWIndex::CUDAHNSWIndex(int dim, int num_data, int M, int ef_construction) : dim(dim) { // 将MetricType参数修改为第三个参数
     bool normalize = false;
@@ -10,6 +11,67 @@ CUDAHNSWIndex::CUDAHNSWIndex(int dim, int num_data, int M, int ef_construction) 
 
 void CUDAHNSWIndex::insert_vectors(const float* data, uint64_t label) {
     index->addPoint(data, label);
+}
+
+template<class Function>
+inline void ParallelFor(size_t start, size_t end, size_t numThreads, Function fn) {
+    if (numThreads <= 0) {
+        numThreads = std::thread::hardware_concurrency();
+    }
+
+    if (numThreads == 1) {
+        for (size_t id = start; id < end; id++) {
+            fn(id, 0);
+        }
+    } else {
+        std::vector<std::thread> threads;
+        std::atomic<size_t> current(start);
+
+        // keep track of exceptions in threads
+        // https://stackoverflow.com/a/32428427/1713196
+        std::exception_ptr lastException = nullptr;
+        std::mutex lastExceptMutex;
+
+        for (size_t threadId = 0; threadId < numThreads; ++threadId) {
+            threads.push_back(std::thread([&, threadId] {
+                while (true) {
+                    size_t id = current.fetch_add(1);
+
+                    if (id >= end) {
+                        break;
+                    }
+
+                    try {
+                        fn(id, threadId);
+                    } catch (...) {
+                        std::unique_lock<std::mutex> lastExcepLock(lastExceptMutex);
+                        lastException = std::current_exception();
+                        /*
+                         * This will work even when current is the largest value that
+                         * size_t can fit, because fetch_add returns the previous value
+                         * before the increment (what will result in overflow
+                         * and produce 0 instead of current + 1).
+                         */
+                        current = end;
+                        break;
+                    }
+                }
+            }));
+        }
+        for (auto &thread : threads) {
+            thread.join();
+        }
+        if (lastException) {
+            std::rethrow_exception(lastException);
+        }
+    }
+}
+
+
+void CUDAHNSWIndex::insert_vectors_batch(const std::vector<float>& data, const std::vector<uint64_t>& labels) {
+    ParallelFor(0, labels.size(), 0, [&](size_t i, size_t threadId) {
+        insert_vectors(data.data() + i * dim, labels[i]);
+    });
 }
 
 std::pair<std::vector<long>, std::vector<float>> CUDAHNSWIndex::search_vectors(const std::vector<float>& query, int k, int ef_search) { // 修改返回类型

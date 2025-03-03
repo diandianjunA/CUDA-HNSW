@@ -134,9 +134,8 @@ void test2() {
   // 使用GPU
   CUDAHNSWIndex *cuindex = new CUDAHNSWIndex(dimension, num_vectors, 16, 200);
 
-  for (size_t i = 0; i < num_vectors; ++i) {
-    cuindex->insert_vectors(vectors.data() + i * dimension, ids[i]);
-  }
+  std::vector<size_t> size_t_ids(ids.begin(), ids.end());
+  cuindex->insert_vectors_batch(vectors, size_t_ids);
 
   cuindex->init_gpu();
   auto start_gpu = std::chrono::high_resolution_clock::now();
@@ -296,7 +295,7 @@ void test5() {
             << "ns" << std::endl;
 }
 
-size_t num_vectors = 10000;
+size_t num_vectors = 1000000;
 size_t dimension = 128;
 
 void test6() {
@@ -341,9 +340,8 @@ void test7() {
   std::vector<faiss::idx_t> ids;
   generate_random_vectors(num_vectors, dimension, vectors, ids);
 
-  for (size_t i = 0; i < num_vectors; ++i) {
-    cuindex->insert_vectors(vectors.data() + i * dimension, ids[i]);
-  }
+  std::vector<size_t> size_t_ids(ids.begin(), ids.end());
+  cuindex->insert_vectors_batch(vectors, size_t_ids);
 
   int num_query = 1000;
   std::vector<float> query(num_query * dimension);
@@ -390,12 +388,12 @@ void test8() {
               << std::endl;
 
     int num_train = num_vectors;
-    std::vector<float> train_vec = randVecs(num_train, dim);
+    std::vector<float> train_vec = randVecs(num_train, dimension);
     const float *ptr = train_vec.data();
     gpu_index->train(num_train, ptr);
 
     int num_query = 1000;
-    std::vector<float> query_vec = randVecs(num_query, dim);
+    std::vector<float> query_vec = randVecs(num_query, dimension);
     int k = 5;
     std::vector<long> indices(num_query * k);
     std::vector<float> distances(num_query * k);
